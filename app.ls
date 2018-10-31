@@ -60,16 +60,20 @@ class Aggregator
   (@opts) ->
     return
 
-  aggregate-by-ip: (req, res) ->
-    {params} = req
-    {ip} = params
+  aggregate-by-ip: (ip, res) ->
     services = []
     services.push GENERATE_URL_IPSTACK ip
     services.push GENERATE_URL_IPGEOLOCATION ip
     services = [ s for s in services when s? ]
+    start = new Date!
     (err, results) <- async.map services, PERFORM_SERVICE
     xs = { [r.name, r.response] for r in results when r? }
-    return res.status 200 .json xs
+    duration = (new Date!) - start
+    return res.status 200 .json do
+      code: 0
+      message: null
+      duration: duration
+      data: xs
 
 
 argv = global.argv = yargs
@@ -89,7 +93,8 @@ a = new Aggregator {}
 web = express!
 web.set 'trust proxy', true
 web.use body-parser.json!
-web.get '/by-ip/:ip', (req, res) -> return a.aggregate-by-ip req, res
+web.get '/by-ip/:ip', (req, res) -> return a.aggregate-by-ip req.params.ip, res
+web.get '/by-client', (req, res) -> return a.aggregate-by-ip req.ip, res
 
 HOST = \0.0.0.0
 PORT = argv.port
