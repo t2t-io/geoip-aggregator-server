@@ -1,7 +1,7 @@
 #!/usr/bin/env lsc
 #
 require! <[fs path http]>
-require! <[colors yargs express prettyjson body-parser request async mkdirp]>
+require! <[colors yargs express prettyjson body-parser request async mkdirp lodash]>
 moment = require \moment-timezone
 
 NG = (message, code, status, req, res) ->
@@ -62,6 +62,9 @@ FORMAT_IP_ADDRESS = (ip) -> return ip.split '.' .join '-'
 class Aggregator
   (@opts) ->
     @addresses = {}
+    now = moment!
+    @dir = "#{now.format 'YYYYMMDD-HHmm'}"
+    @counter = 0
     return
 
   find-cache: (ip) ->
@@ -73,6 +76,26 @@ class Aggregator
     {addresses} = self = @
     last-updated = new Date!
     addresses[ip] = pack = {last-updated, data}
+    self.save-to-disk!
+
+  save-to-disk: ->
+    {addresses, dir, counter} = self = @
+    counter = counter.toString!
+    uptime = Math.floor process.uptime!
+    uptime = uptime.toString!
+    p = "#{__dirname}/work/#{dir}/backup-#{lodash.padStart counter, 4, '0'}-#{lodash.padStart uptime, 8, '0'}.json"
+    (mkdir-err) <- mkdirp path.dirname p
+    return ERR "failed to save #{p} because of mkdir-err: #{mkdir-err}" if mkdir-err?
+    text = JSON.stringify addresses
+    (write-err) <- fs.writeFile p, text
+    return ERR "failed to save #{p} because of write-err: #{write-err}" if write-err?
+    return INFO "successfully flush addresses (#{text.length} bytes) to disk: #{p.yellow}"
+
+  prettyprint-geolocation: (s, city, country, timezone) ->
+    city = if city? then city.yellow else "null".gray
+    country = if country? then country.cyan else "null".gray
+    timezone = if timezone? then timezone.green else "null".gray
+    return "#{s}:#{city},#{country},#{timezone}"
 
   aggregate-by-ip: (ip, res) ->
     self = @
@@ -90,13 +113,25 @@ class Aggregator
     data = { [r.name, r.response] for r in results when r? }
     duration = (new Date!) - start
     self.update-cache ip, data
+    info = []
+    s1 = data['ipstack.com']
+    s2 = data['ipgeolocation.io']
+    info.push self.prettyprint-geolocation 'ipstack.com', s1.city, s1.country_code, s1.time_zone.id if s1?
+    info.push self.prettyprint-geolocation 'ipgeolocation.io', s2.city, s2.country_code2, s2.time_zone.name if s2?
+    info = info.join ' '
+    INFO "aggregation: #{ip.red} => #{info}"
     return res.status 200 .json {code, message, data, duration}
 
-  clean-cache: ->
+  get-addresses: ->
     {addresses} = self = @
-    self.addresses = {}
     xs = [k for k, v of addresses]
     xs.sort!
+    return xs
+
+  clean-cache: ->
+    xs = @.get-addresses!
+    @addresses = {}
+    @counter = @counter + 1
     return xs
 
 
@@ -129,6 +164,12 @@ web.get '/by-client', (req, res) ->
 
 web.get '/clean', (req, res) ->
   data = a.clean-cache!
+  code = 0
+  message = null
+  return res.status 200 .json {code, message, data}
+
+web.get '/addresses', (req, res) ->
+  data = a.get-addresses!
   code = 0
   message = null
   return res.status 200 .json {code, message, data}

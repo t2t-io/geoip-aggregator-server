@@ -42,7 +42,7 @@ dependencies:
   yargs: \*
   request: \*
   express: \*
-  multer: \*
+  mkdirp: \*
   prettyjson: \*
   \moment-timezone : \*
   \body-parser : \*
