@@ -153,8 +153,11 @@ web = express!
 web.set 'trust proxy', true
 web.use body-parser.json!
 web.get '/by-ip/:ip', (req, res) ->
+  {site, host, instance, service} = req.query
   {ip} = req.params
-  INFO "/by-ip    : from #{req.ip.green} wants #{ip.yellow}"
+  metadata = ''
+  metadata = ", metadata 'site:#{site}, host:#{host}, instance:#{instance}, service:#{service}'" if site? and host? and instance? and service?
+  INFO "/by-ip    : from #{req.ip.green} wants #{ip.yellow}#{metadata}"
   return a.aggregate-by-ip ip, res
 
 web.get '/by-client', (req, res) ->
